@@ -1,0 +1,423 @@
+types:
+
+import java.net.InetAddress
+import java.util.UUID
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class NodeId(val value: String = UUID.randomUUID().toString())
+
+@Serializable
+data class PeerInfo(
+    val nodeId: NodeId,
+    val host: String,
+    val port: Int,
+    val lastSeenMillis: Long = System.currentTimeMillis()
+)
+
+@Serializable
+sealed class BusMessage {
+    @Serializable
+    data class ImHere(
+        val nodeId: NodeId,
+        val host: String,
+        val port: Int
+    ) : BusMessage()
+
+    @Serializable
+    data class PeerList(
+        val from: NodeId,
+        val peers: List<PeerInfo>
+    ) : BusMessage()
+
+    @Serializable
+    data class Heartbeat(
+        val from: NodeId
+    ) : BusMessage()
+
+    // Your app-level payloads can go here later:
+    // @Serializable data class AppEvent(...) : BusMessage()
+}
+
+
+
+
+
+config:
+
+data class BusConfig(
+    val multicastGroup: InetAddress,
+    val multicastPort: Int,
+    val unicastPort: Int,
+    val baseRediscoverIntervalMs: Long = 60_000L,      // 1 minute
+    val perPeerRediscoverIncrementMs: Long = 60_000L,  // +1 min per known peer
+    val rediscoverListenWindowMs: Long = 10_000L,      // listen for 10s
+    val imHereIntervalMs: Long = 60_000L,              // beacon every 60s
+    val heartbeatIntervalMs: Long = 30_000L,
+    val heartbeatTimeoutMs: Long = 90_000L
+)
+
+
+
+
+
+
+api:
+
+interface PeerBus {
+    val selfId: NodeId
+
+    /** Start listening, beaconing, heartbeating, rediscovery, etc. */
+    fun start()
+
+    /** Stop all background jobs and close sockets. */
+    fun stop()
+
+    /** Current known peers (snapshot). */
+    fun getPeers(): List<PeerInfo>
+
+    /** Send an application-level message to a specific peer (you can define this later). */
+    suspend fun sendAppMessage(peer: PeerInfo, payload: ByteArray)
+
+    /** Observe membership changes. */
+    fun addPeerListener(listener: PeerListener)
+    fun removePeerListener(listener: PeerListener)
+}
+
+fun interface PeerListener {
+    fun onPeersUpdated(peers: List<PeerInfo>)
+}
+
+
+
+
+
+
+skell:
+
+
+import android.content.Context
+import android.net.wifi.WifiManager
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.net.*
+
+class PeerBusImpl(
+    private val context: Context,
+    private val config: BusConfig,
+    override val selfId: NodeId = NodeId()
+) : PeerBus {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val wifiManager = context.applicationContext
+        .getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+    private val peers = mutableMapOf<String, PeerInfo>()   // keyed by nodeId.value
+    private val peersMutex = Mutex()
+    private val listeners = mutableSetOf<PeerListener>()
+
+    @Volatile
+    private var running = false
+
+    private lateinit var unicastSocket: DatagramSocket
+
+    override fun start() {
+        if (running) return
+        running = true
+
+        // Start unicast listener
+        unicastSocket = DatagramSocket(config.unicastPort).apply {
+            soTimeout = 0
+        }
+
+        scope.launch { unicastListenerLoop() }
+        scope.launch { imHereBeaconLoop() }
+        scope.launch { heartbeatLoop() }
+        scope.launch { rediscoveryLoop() }
+    }
+
+    override fun stop() {
+        running = false
+        scope.cancel()
+        runCatching { unicastSocket.close() }
+    }
+
+    override fun getPeers(): List<PeerInfo> =
+        runBlocking { peersMutex.withLock { peers.values.toList() } }
+
+    override suspend fun sendAppMessage(peer: PeerInfo, payload: ByteArray) {
+        // For now, just raw UDP; later you can wrap BusMessage or app messages
+        val packet = DatagramPacket(
+            payload,
+            payload.size,
+            InetAddress.getByName(peer.host),
+            peer.port
+        )
+        withContext(Dispatchers.IO) {
+            unicastSocket.send(packet)
+        }
+    }
+
+    override fun addPeerListener(listener: PeerListener) {
+        listeners += listener
+    }
+
+    override fun removePeerListener(listener: PeerListener) {
+        listeners -= listener
+    }
+
+    // Notify listeners (call under peersMutex or with a snapshot)
+    private fun notifyPeerListeners() {
+        val snapshot = peers.values.toList()
+        listeners.forEach { listener ->
+            try {
+                listener.onPeersUpdated(snapshot)
+            } catch (_: Throwable) { /* ignore */ }
+        }
+    }
+}
+
+
+
+private suspend fun PeerBusImpl.unicastListenerLoop() {
+    val buf = ByteArray(8192)
+    while (running) {
+        val packet = DatagramPacket(buf, buf.size)
+        try {
+            unicastSocket.receive(packet)
+        } catch (e: SocketException) {
+            if (!running) break else continue
+        }
+
+        // TODO: decode BusMessage via kotlinx.serialization, e.g. JSON
+        val message = decodeBusMessage(packet.data, packet.length) ?: continue
+
+        when (message) {
+            is BusMessage.ImHere -> handleImHere(message, packet.address)
+            is BusMessage.PeerList -> handlePeerList(message)
+            is BusMessage.Heartbeat -> handleHeartbeat(message, packet.address)
+            // is BusMessage.AppEvent -> handleAppEvent(message)
+        }
+    }
+}
+
+
+
+
+private suspend fun PeerBusImpl.imHereBeaconLoop() {
+    val group = config.multicastGroup
+    val port = config.multicastPort
+
+    val imHereMessage = BusMessage.ImHere(
+        nodeId = selfId,
+        host = getLocalIpAddress() ?: "0.0.0.0",
+        port = config.unicastPort
+    )
+
+    while (running) {
+        sendMulticastMessage(imHereMessage, group, port)
+        delay(config.imHereIntervalMs)
+    }
+}
+
+private suspend fun PeerBusImpl.sendMulticastMessage(
+    message: BusMessage,
+    group: InetAddress,
+    port: Int
+) {
+    val data = encodeBusMessage(message)  // TODO: implement serialization
+    withContext(Dispatchers.IO) {
+        MulticastSocket().use { socket ->
+            socket.send(DatagramPacket(data, data.size, group, port))
+        }
+    }
+}
+
+
+private suspend fun PeerBusImpl.heartbeatLoop() {
+    while (running) {
+        val now = System.currentTimeMillis()
+        val currentPeers: List<PeerInfo>
+
+        peersMutex.withLock {
+            currentPeers = peers.values.toList()
+        }
+
+        // send heartbeats
+        currentPeers.forEach { peer ->
+            scope.launch {
+                val msg = BusMessage.Heartbeat(from = selfId)
+                val data = encodeBusMessage(msg)
+                val packet = DatagramPacket(
+                    data,
+                    data.size,
+                    InetAddress.getByName(peer.host),
+                    peer.port
+                )
+                try {
+                    unicastSocket.send(packet)
+                } catch (_: Exception) { /* ignore */ }
+            }
+        }
+
+        // prune dead peers
+        peersMutex.withLock {
+            val it = peers.entries.iterator()
+            var changed = false
+            while (it.hasNext()) {
+                val entry = it.next()
+                val age = now - entry.value.lastSeenMillis
+                if (age > config.heartbeatTimeoutMs) {
+                    it.remove()
+                    changed = true
+                }
+            }
+            if (changed) {
+                notifyPeerListeners()
+            }
+        }
+
+        delay(config.heartbeatIntervalMs)
+    }
+}
+
+
+
+
+
+
+private suspend fun PeerBusImpl.handleImHere(msg: BusMessage.ImHere, fromAddr: InetAddress) {
+    val now = System.currentTimeMillis()
+    peersMutex.withLock {
+        val key = msg.nodeId.value
+        val existing = peers[key]
+        val updated = PeerInfo(
+            nodeId = msg.nodeId,
+            host = msg.host.ifBlank { fromAddr.hostAddress },
+            port = msg.port,
+            lastSeenMillis = now
+        )
+        if (existing == null || existing.host != updated.host || existing.port != updated.port) {
+            peers[key] = updated
+            notifyPeerListeners()
+            // Optionally: send our peer list to this new peer
+            scope.launch { sendPeerList(updated) }
+        } else {
+            peers[key] = updated
+        }
+    }
+}
+
+private suspend fun PeerBusImpl.handlePeerList(msg: BusMessage.PeerList) {
+    val now = System.currentTimeMillis()
+    peersMutex.withLock {
+        var changed = false
+        msg.peers.forEach { peer ->
+            val key = peer.nodeId.value
+            val existing = peers[key]
+            val updated = peer.copy(lastSeenMillis = now)
+            if (existing == null || existing.lastSeenMillis < updated.lastSeenMillis) {
+                peers[key] = updated
+                changed = true
+            }
+        }
+        if (changed) {
+            notifyPeerListeners()
+        }
+    }
+}
+
+private suspend fun PeerBusImpl.handleHeartbeat(msg: BusMessage.Heartbeat, fromAddr: InetAddress) {
+    val now = System.currentTimeMillis()
+    peersMutex.withLock {
+        val key = msg.from.value
+        val existing = peers[key]
+        if (existing != null) {
+            peers[key] = existing.copy(lastSeenMillis = now)
+        } else {
+            // we don't know this peer yet; optionally add as "seen"
+            peers[key] = PeerInfo(msg.from, fromAddr.hostAddress, config.unicastPort, now)
+            notifyPeerListeners()
+        }
+    }
+}
+
+private suspend fun PeerBusImpl.sendPeerList(peer: PeerInfo) {
+    val list = peersMutex.withLock { peers.values.toList() }
+    val msg = BusMessage.PeerList(from = selfId, peers = list)
+    val data = encodeBusMessage(msg)
+    val packet = DatagramPacket(
+        data,
+        data.size,
+        InetAddress.getByName(peer.host),
+        peer.port
+    )
+    withContext(Dispatchers.IO) {
+        unicastSocket.send(packet)
+    }
+}
+
+
+
+
+
+private suspend fun PeerBusImpl.rediscoveryLoop() {
+    while (running) {
+        val clusterSize = peersMutex.withLock { peers.size }
+        val interval = config.baseRediscoverIntervalMs +
+            config.perPeerRediscoverIncrementMs * clusterSize
+
+        delay(interval)
+
+        if (!running) break
+        doRediscoverOnce()
+    }
+}
+
+private suspend fun PeerBusImpl.doRediscoverOnce() {
+    val lock = wifiManager.createMulticastLock("peer-bus-rediscover").apply {
+        setReferenceCounted(false)
+        acquire()
+    }
+
+    try {
+        withContext(Dispatchers.IO) {
+            MulticastSocket(config.multicastPort).use { socket ->
+                socket.joinGroup(config.multicastGroup)
+                socket.soTimeout = (config.rediscoverListenWindowMs).toInt()
+
+                val buf = ByteArray(8192)
+                val start = System.currentTimeMillis()
+
+                while (System.currentTimeMillis() - start < config.rediscoverListenWindowMs && running) {
+                    val packet = DatagramPacket(buf, buf.size)
+                    try {
+                        socket.receive(packet)
+                    } catch (e: SocketTimeoutException) {
+                        break
+                    } catch (e: Exception) {
+                        break
+                    }
+
+                    val msg = decodeBusMessage(packet.data, packet.length) ?: continue
+                    if (msg is BusMessage.ImHere) {
+                        // Treat as if we received it via unicast listener
+                        scope.launch {
+                            handleImHere(msg, packet.address)
+                        }
+                    }
+                }
+
+                socket.leaveGroup(config.multicastGroup)
+            }
+        }
+    } finally {
+        lock.release()
+    }
+}
+
+
+
+
