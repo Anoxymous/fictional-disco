@@ -4,11 +4,11 @@ import_JS("./ui/controls.js")
 function main() 
 {
 	const config = [
-					{ id: "J-1", name: "movement", coord: "+50,+50,percent", size: "30,30,percent", type: "joystick" },
-					{ id: "B-2", name: "attack", coord: "  0,  0,percent", size: "15,15,percent", type: "button" },
-					{ id: "B-3", name: "attack", coord: " -0,  0,percent", size: "15,15,percent", type: "button" },
-					{ id: "B-4", name: "attack", coord: "  0, -0,percent", size: "15,15,percent", type: "button" },
-					{ id: "B-5", name: "attack", coord: " -0, -0,percent", size: "15,15,percent", type: "button" }
+					{ id: "J-1", name: "movement", coord: "+50,+50,percent", size: "30,30,percent", type: "joystick", style: "touch-joystick" },
+					{ id: "B-2", name: "attack", coord: "  0,  0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
+					{ id: "B-3", name: "attack", coord: " -0,  0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
+					{ id: "B-4", name: "attack", coord: "  0, -0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
+					{ id: "B-5", name: "attack", coord: " -0, -0,percent", size: "15,15,percent", type: "button", style: "touch-button" }
 			];
 
 	const controls = new TouchControls();
