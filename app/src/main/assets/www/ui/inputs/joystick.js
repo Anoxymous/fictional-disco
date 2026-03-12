@@ -12,6 +12,10 @@ class TouchJoystick {
 				this.knob.className = "touch-joystick-knob";
 				this.element.appendChild(this.knob);
 
+				this._touchStart  = this.handleTouchStart.bind(this);
+				this._touchMove = this.handleTouchMove.bind(this);
+				this._touchEnd  = this.handleTouchEnd.bind(this);
+
 				this.applyStyle();
 				this.addEvents();
 		}
@@ -32,13 +36,15 @@ class TouchJoystick {
 				this.knob.style.top = "30%";
 		}
 
-		touchStart()
+		handleTouchStart(event)
 		{
 			this.active = true;
-			this.center = this.getCenter();			
+			this.center = this.getCenter();
+			
+			this.configureEvents_TouchStart();
 		}
 
-		touchMove(e)
+		handleTouchMove(event)
 		{
 			if (!this.active) return;
 
@@ -47,16 +53,16 @@ class TouchJoystick {
 			
 			if(event.type === "touchmove")
 			{
-				const touch = e.touches[0];
+				const touch = event.touches[0];
 				const rect = this.element.getBoundingClientRect();
 
-				dx = e.touch - this.center.x;
-				dy = e.touch - this.center.y;
+				dx = touch.clientX - this.center.x;
+				dy = touch.clientY - this.center.y;
 			}
 			else
 			{
-				dx = e.clientX - this.center.x;
-				dy = e.clientY - this.center.y;
+				dx = event.clientX - this.center.x;
+				dy = event.clientY - this.center.y;
 			}
 
 			const rect = this.element.getBoundingClientRect();
@@ -74,23 +80,35 @@ class TouchJoystick {
 			this.emit(this.config.id, { x: nx, y: ny });
 		}
 		
-		touchEnd(e)
+		handleTouchEnd(event)
 		{
 			this.active = false;
 			this.knob.style.left = "30%";
 			this.knob.style.top = "30%";
 			this.emit(this.config.id, { x: 0, y: 0 });
+			
+			this.configureEvents_TouchEnd();
 		}
 		
-		addEvents(e) {
-				this.element.addEventListener("touchstart", e => { this.touchStart(e) } );
-				this.element.addEventListener("touchmove",  e => { this.touchMove(e) } );
-				this.element.addEventListener("touchend",   e => { this.touchEnd(e) } );
+		addEvents() {
+				this.element.addEventListener("touchstart", this._touchStart );
+				this.element.addEventListener("mousedown",  this._touchStart );
+		}
+		
+		configureEvents_TouchStart() {
+				window.addEventListener("touchmove", this._touchMove);
+				window.addEventListener("mousemove", this._touchMove);
 
-				this.element.addEventListener("mousedown", e => { this.touchStart(e) } );
-				this.element.addEventListener("mousemove", e => { this.touchMove(e) } );
-				this.element.addEventListener("mouseup",   e => { this.touchEnd(e) } );
+				window.addEventListener("touchend", this._touchEnd);
+				window.addEventListener("mouseup",  this._touchEnd);
+		}
 
+		configureEvents_TouchEnd() {
+				window.removeEventListener("touchmove", this._touchMove);
+				window.removeEventListener("mousemove", this._touchMove);
+
+				window.removeEventListener("touchend", this._touchEnd);
+				window.removeEventListener("mouseup",  this._touchEnd);
 		}
 
 		getCenter() {
