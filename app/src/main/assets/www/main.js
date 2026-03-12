@@ -1,3 +1,6 @@
+import_JS("./ui/controls.js")
+// const import_ss_styl = [];
+
 function main() 
 {
 	const config = [
