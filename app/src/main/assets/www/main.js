@@ -1,7 +1,15 @@
-import_JS("./ui/controls.js")
-// const import_ss_styl = [];
+// App Info
+const APP_TITLE = "Shadowwild";
 
-function main() 
+// Style
+import_CSS("styles.css");
+
+// Libraries
+import_JS("./ui/controls.js")
+
+
+
+function main(app_area) 
 {
 	const config = [
 					{ id: "J-1", name: "movement", coord: "+50,+50,percent", size: "30,30,percent", type: "joystick", style: "touch-joystick" },
@@ -16,7 +24,7 @@ function main()
 			console.log("Input:", id, data);
 	});
 
-	controls.init(document.getElementById("gameArea"), config);
+	controls.init(app_area, config);
 }
  
 

@@ -24,8 +24,8 @@ function import_JS(script_src)
 			ss_loadCount++;
 			if (ss_loadCount === ss_importCount)
 			{
-				console.log("Done loading scripts, calling main().");
-				main();
+				console.log("Done loading scripts, starting app.");
+				start_app();
 			}
 		}
 		script_link.src = script_src;
@@ -35,7 +35,7 @@ function import_JS(script_src)
 
 function import_CSS(style_src)
 {
-	console.log("Loading stylesheet " + script_src);
+	console.log("Loading stylesheet " + style_src);
 	const styles_link = document.createElement("link");
 	styles_link.rel = "stylesheet";
 	styles_link.href = style_src;
@@ -44,5 +44,24 @@ function import_CSS(style_src)
 
 function init_main()
 {
+	app_area = document.createElement("div");
+	app_area.id = "appArea";
+	app_area.style.display = 'none';
+	document.body.appendChild(app_area);
+	
 	import_JS("main.js");
 }
+
+function start_app()
+{
+	document.title = APP_TITLE;
+	
+	app_area = document.getElementById("appArea");
+
+	document.body.replaceChildren(app_area);
+	app_area.style.display = 'block';
+	
+	console.log("Ready. Calling main().");
+	main(app_area);
+}
+
