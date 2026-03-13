@@ -8,25 +8,38 @@ import_CSS("styles.css");
 import_JS("./ui/controls.js")
 
 
-
 function main(app_area) 
 {
-	const config = [
-					{ id: "J-1", name: "movement", coord: "+50,+50,percent", size: "30,30,percent", type: "joystick", style: "touch-joystick" },
-					{ id: "B-2", name: "attack", coord: "  0,  0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
-					{ id: "B-3", name: "attack", coord: " -0,  0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
-					{ id: "B-4", name: "attack", coord: "  0, -0,percent", size: "15,15,percent", type: "button", style: "touch-button" },
-					{ id: "B-5", name: "attack", coord: " -0, -0,percent", size: "15,15,percent", type: "button", style: "touch-button" }
+	const controlls_config = [
+					{ id: "Mve", name: "movement", coord: "5, -5,percent", size: "25,25,percent", type: "joystick", style: "touch-joystick" },
+//					{ id: "Cam", name: "camera", coord: "+50,+50,percent", size: "30,30,percent", type: "D-Pad", style: "touch-joystick" },
+					{ id: "Atk", name: "attack",  coord: "  -5,  -5,percent",  size: "15,15,percent", type: "button", style: "touch-button" },
+					{ id: "S-1", name: "skill-1", coord: "  -5,  -27,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "S-2", name: "skill-2", coord: "  -5,  -40,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "S-3", name: "skill-3", coord: "  -5,  -53,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "S-4", name: "skill-4", coord: "  -5,  -66,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "B-1", name: "belt-1", coord: " +41, -5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "B-2", name: "belt-2", coord: " +47, -5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "B-3", name: "belt-3", coord: " +53, -5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "B-4", name: "belt-4", coord: " +59, -5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "m-1", name: "menu-1", coord: " 5, 5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
+					{ id: "m-2", name: "menu-1", coord: " -5, 5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
 			];
 
+	setupControls(app_area, controlls_config)
+}
+
+function setupControls(app_area, config)
+{
 	const controls = new TouchControls();
+	
 	controls.onInput((id, data) => {
 			console.log("Input:", id, data);
 	});
 
 	controls.init(app_area, config);
-}
- 
+
+} 
 
 /*
 // import {initRenderer,scene,camera,renderer} from "./engine/renderer.js"
