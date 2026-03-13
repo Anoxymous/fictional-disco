@@ -52,23 +52,20 @@ class TouchUtils {
 		static configureEvents_init(control) {
 			
 				control.element.addEventListener("dragstart", e => e.preventDefault());
-				control.element.addEventListener("touchstart", control._touchStart );
-				control.element.addEventListener("mousedown",  control._touchStart );
+				control.element.addEventListener("pointerdown", control._touchStart );
 		}
 		
 		static configureEvents_TouchStart(control) {
-				window.addEventListener("touchmove", control._touchMove);
-				window.addEventListener("mousemove", control._touchMove);
+				window.addEventListener("pointermove", control._touchMove);
 
-				window.addEventListener("touchend", control._touchEnd);
-				window.addEventListener("mouseup",  control._touchEnd);
+				window.addEventListener("pointerup", control._touchEnd);
+				window.addEventListener("pointercancel",  control._touchEnd);
 		}
 
 		static configureEvents_TouchEnd(control) {
-				window.removeEventListener("touchmove", control._touchMove);
-				window.removeEventListener("mousemove", control._touchMove);
+				window.removeEventListener("pointermove", control._touchMove);
 
-				window.removeEventListener("touchend", control._touchEnd);
-				window.removeEventListener("mouseup",  control._touchEnd);
+				window.removeEventListener("pointerup", control._touchEnd);
+				window.removeEventListener("pointercancel",  control._touchEnd);
 		}
 }
