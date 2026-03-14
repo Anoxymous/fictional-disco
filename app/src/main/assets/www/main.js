@@ -6,6 +6,7 @@ import_CSS("styles.css");
 
 // Libraries
 import_JS("./ui/controls.js")
+import_JS("./engine/renderer.js")
 
 
 function main(app_area) 
@@ -26,7 +27,10 @@ function main(app_area)
 					{ id: "m-2", name: "menu-1", coord: " -5, 5,percent", size: "10,10,percent", type: "button", style: "touch-button" },
 			];
 
-	setupControls(app_area, controlls_config)
+	setupControls(app_area, controlls_config);
+	
+	var reneng = new SS3DEng();
+	reneng.init(app_area);
 }
 
 function setupControls(app_area, config)
